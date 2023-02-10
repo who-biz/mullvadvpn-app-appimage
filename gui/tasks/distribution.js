@@ -1,7 +1,6 @@
 const path = require('path');
 const fs = require('fs');
 const builder = require('electron-builder');
-const { Arch } = require('electron-builder');
 const parseSemver = require('semver/functions/parse');
 const { notarize } = require('electron-notarize');
 const { version } = require('../package.json');
@@ -11,13 +10,6 @@ const noAppleNotarization = process.argv.includes('--no-apple-notarization');
 
 const universal = process.argv.includes('--universal');
 const release = process.argv.includes('--release');
-
-const targetsIndex = process.argv.indexOf('--targets');
-let targets = null;
-
-if (targetsIndex !== -1) {
-  targets = process.argv[targetsIndex + 1];
-}
 
 const config = {
   appId: 'net.mullvad.vpn',
@@ -50,8 +42,6 @@ const config = {
     'build/src/renderer/bundle.js',
     'build/src/renderer/preloadBundle.js',
     '!**/*.tsbuildinfo',
-    '!test/',
-    '!playwright.config.ts',
     'node_modules/',
     '!node_modules/grpc-tools',
     '!node_modules/@types',
@@ -59,16 +49,14 @@ const config = {
 
   // Make sure that all files declared in "extraResources" exists and abort if they don't.
   afterPack: (context) => {
-    if (context.arch !== Arch.universal) {
-      const resources = context.packager.platformSpecificBuildOptions.extraResources;
-      for (const resource of resources) {
-        const filePath = resource.from.replace(/\$\{env\.(.*)\}/, function (match, captureGroup) {
-          return process.env[captureGroup];
-        });
+    const resources = context.packager.platformSpecificBuildOptions.extraResources;
+    for (const resource of resources) {
+      const filePath = resource.from.replace(/\$\{env\.(.*)\}/, function (match, captureGroup) {
+        return process.env[captureGroup];
+      });
 
-        if (!fs.existsSync(filePath)) {
-          throw new Error(`Can't find file: ${filePath}`);
-        }
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`Can't find file: ${filePath}`);
       }
     }
   },
@@ -148,7 +136,6 @@ const config = {
       { from: distAssets('binaries/x86_64-pc-windows-msvc/openvpn.exe'), to: '.' },
       { from: root('build/lib/x86_64-pc-windows-msvc/libwg.dll'), to: '.' },
       { from: distAssets('binaries/x86_64-pc-windows-msvc/wintun/wintun.dll'), to: '.' },
-      { from: distAssets('binaries/x86_64-pc-windows-msvc/split-tunnel/mullvad-split-tunnel.sys'), to: '.' },
       {
         from: distAssets('binaries/x86_64-pc-windows-msvc/wireguard-nt/mullvad-wireguard.dll'),
         to: '.',
@@ -157,77 +144,21 @@ const config = {
   },
 
   linux: {
-    target: [
-      {
-        target: 'deb',
-        arch: getLinuxTargetArch(),
-      },
-      {
-        target: 'rpm',
-        arch: getLinuxTargetArch(),
-      },
-    ],
+    target: ['appImage'],
     artifactName: 'MullvadVPN-${version}_${arch}.${ext}',
     category: 'Network',
     icon: distAssets('icon.icns'),
     extraFiles: [{ from: distAssets('linux/mullvad-gui-launcher.sh'), to: '.' }],
     extraResources: [
-      { from: distAssets(path.join(getLinuxTargetSubdir(), 'mullvad-problem-report')), to: '.' },
-      { from: distAssets(path.join(getLinuxTargetSubdir(), 'mullvad-setup')), to: '.' },
-      { from: distAssets(path.join(getLinuxTargetSubdir(), 'libtalpid_openvpn_plugin.so')), to: '.' },
-      { from: distAssets(path.join('binaries', '${env.TARGET_TRIPLE}', 'openvpn')), to: '.' },
+      { from: distAssets('mullvad-problem-report'), to: '.' },
+      { from: distAssets('mullvad-daemon'), to: '.' },
+      { from: distAssets('mullvad-setup'), to: '.' },
+      { from: distAssets('libtalpid_openvpn_plugin.so'), to: '.' },
+      { from: distAssets('binaries/x86_64-unknown-linux-gnu/openvpn'), to: '.' },
+      { from: distAssets('linux/mullvad-daemon.service'), to: '.' },
     ],
   },
 
-  deb: {
-    fpm: [
-      '--no-depends',
-      '--version',
-      getDebVersion(),
-      '--before-install',
-      distAssets('linux/before-install.sh'),
-      '--before-remove',
-      distAssets('linux/before-remove.sh'),
-      distAssets('linux/mullvad-daemon.service') +'=/usr/lib/systemd/system/mullvad-daemon.service',
-      distAssets('linux/mullvad-early-boot-blocking.service') +'=/usr/lib/systemd/system/mullvad-early-boot-blocking.service',
-      distAssets(path.join(getLinuxTargetSubdir(), 'mullvad')) + '=/usr/bin/',
-      distAssets(path.join(getLinuxTargetSubdir(), 'mullvad-daemon')) + '=/usr/bin/',
-      distAssets(path.join(getLinuxTargetSubdir(), 'mullvad-exclude')) + '=/usr/bin/',
-      distAssets('linux/problem-report-link') + '=/usr/bin/mullvad-problem-report',
-      distAssets('shell-completions/mullvad.bash') +
-        '=/usr/share/bash-completion/completions/mullvad',
-      distAssets('shell-completions/_mullvad') + '=/usr/local/share/zsh/site-functions/_mullvad',
-      distAssets('shell-completions/mullvad.fish') +
-        '=/usr/share/fish/vendor_completions.d/mullvad.fish',
-    ],
-    afterInstall: distAssets('linux/after-install.sh'),
-    afterRemove: distAssets('linux/after-remove.sh'),
-  },
-
-  rpm: {
-    fpm: [
-      '--before-install',
-      distAssets('linux/before-install.sh'),
-      '--before-remove',
-      distAssets('linux/before-remove.sh'),
-      '--rpm-posttrans',
-      distAssets('linux/post-transaction.sh'),
-      distAssets('linux/mullvad-daemon.service') +'=/usr/lib/systemd/system/mullvad-daemon.service',
-      distAssets('linux/mullvad-early-boot-blocking.service') +'=/usr/lib/systemd/system/mullvad-early-boot-blocking.service',
-      distAssets(path.join(getLinuxTargetSubdir(), 'mullvad')) + '=/usr/bin/',
-      distAssets(path.join(getLinuxTargetSubdir(), 'mullvad-daemon')) + '=/usr/bin/',
-      distAssets(path.join(getLinuxTargetSubdir(), 'mullvad-exclude')) + '=/usr/bin/',
-      distAssets('linux/problem-report-link') + '=/usr/bin/mullvad-problem-report',
-      distAssets('shell-completions/mullvad.bash') +
-        '=/usr/share/bash-completion/completions/mullvad',
-      distAssets('shell-completions/_mullvad') + '=/usr/share/zsh/site-functions/_mullvad',
-      distAssets('shell-completions/mullvad.fish') +
-        '=/usr/share/fish/vendor_completions.d/mullvad.fish',
-    ],
-    afterInstall: distAssets('linux/after-install.sh'),
-    afterRemove: distAssets('linux/after-remove.sh'),
-    depends: ['libXScrnSaver', 'libnotify', 'libnsl', 'dbus-libs'],
-  },
 };
 
 function packWin() {
@@ -270,11 +201,8 @@ function packMac() {
       afterPack: (context) => {
         config.afterPack?.(context);
 
-        if (context.arch !== Arch.universal) {
-          delete process.env.TARGET_TRIPLE;
-          appOutDirs.push(context.appOutDir);
-        }
-
+        delete process.env.TARGET_TRIPLE;
+        appOutDirs.push(context.appOutDir);
         return Promise.resolve();
       },
       afterAllArtifactBuild: async (buildResult) => {
@@ -315,29 +243,11 @@ function notarizeMac(notarizePath) {
 }
 
 function packLinux() {
-  if (noCompression) {
-    config.rpm.fpm.unshift('--rpm-compression', 'none');
-  }
 
   return builder.build({
     targets: builder.Platform.LINUX.createTarget(),
     config: {
       ...config,
-      beforeBuild: (options) => {
-        switch (options.arch) {
-          case 'x64':
-            process.env.TARGET_TRIPLE = 'x86_64-unknown-linux-gnu';
-            break;
-          case 'arm64':
-            process.env.TARGET_TRIPLE = 'aarch64-unknown-linux-gnu';
-            break;
-          default:
-            delete process.env.TARGET_TRIPLE;
-            break;
-        }
-
-        return true;
-      },
       afterPack: async (context) => {
         config.afterPack?.(context);
 
@@ -362,27 +272,6 @@ function root(relativePath) {
   return path.join(path.resolve(__dirname, '../../'), relativePath);
 }
 
-function getLinuxTargetArch() {
-  if (targets) {
-    if (targets === 'aarch64-unknown-linux-gnu') {
-      return 'arm64';
-    }
-    throw new Error(`Invalid or unknown target (only one may be specified)`);
-  }
-  // Use host architecture.
-  return undefined;
-}
-
-function getLinuxTargetSubdir() {
-  if (targets) {
-    if (targets === 'aarch64-unknown-linux-gnu') {
-      return targets;
-    }
-    throw new Error(`Invalid or unknown target (only one may be specified)`);
-  }
-  return '';
-}
-
 function getMacArch() {
   if (universal) {
     return 'universal';
@@ -390,19 +279,6 @@ function getMacArch() {
     // Not specifying an arch makes Electron builder build for the arch it's running on.
     return undefined;
   }
-}
-
-// Replace '-' between components with a tilde to make the version comparison understand that
-// YYYY.NN-dev-HHHHHH > YYYY.NN > YYYY.NN-betaN-dev-HHHHHH > YYYY.NN-betaN.
-function getDebVersion() {
-  const { major, minor, prerelease } = parseSemver(version);
-  if (prerelease[0]) {
-    if (prerelease[0].toLowerCase().startsWith('beta')) {
-      return `${major}.${minor}~${prerelease[0]}`;
-    }
-    return `${major}.${minor}-${prerelease[0]}`;
-  }
-  return `${major}.${minor}`;
 }
 
 packWin.displayName = 'builder-win';

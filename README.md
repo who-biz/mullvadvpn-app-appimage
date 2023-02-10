@@ -1,3 +1,21 @@
+# AppImage fork of Mullvad VPN app
+
+This fork of mullvadvpn-app has been changed to create a AppImage GUI app 
+for non-rpm systems.
+
+Regular build instructions should be followed, which will generate the GUI 
+and binaries necessary to run Mullvad on any linux distribution.
+
+However, the modifications made herein will not place configuration files,
+certificates, system services, and etc... in their proper locations.  One
+should manually copy relevant files to their proper locations in `/opt/Mullvad VPN/`
+and system service file into `/etc/systemd/system`.  Once that is done, user
+should `sudo systemctl enable mullvad-daemon.service && sudo systemctl start mullvad-daemon.service`.
+
+App should work as expected once this is done.  You will also need to configure
+a `.desktop` file for your distribution, if you wish to use a desktop launcher.
+
+
 # Mullvad VPN desktop and mobile app
 
 Welcome to the Mullvad VPN client app source code repository.
@@ -112,15 +130,15 @@ on your platform please submit an issue or a pull request.
 
 The host has to have the following installed:
 
-- Microsoft's _Build Tools for Visual Studio 2022_ (a regular installation of Visual Studio 2022
-  Community or Pro edition works as well).
+- Microsoft's _Build Tools for Visual Studio 2019_ (a regular installation of Visual Studio 2019
+  Community edition works as well).
 
 - Windows 10 SDK.
 
 - `msbuild.exe` available in `%PATH%`. If you installed Visual Studio Community edition, the
   binary can be found under:
   ```
-  C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\amd64
   ```
 
 - `bash` installed as well as a few base unix utilities, including `sed` and `tail`.
